@@ -4,7 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
 
-const expressApp = express();
+const expressApp: express.Express = express();
 
 const bootstrap = async () => {
     const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
