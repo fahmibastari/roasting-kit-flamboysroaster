@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === ENUM ===
+enum Role {
+  ADMIN
+  ROASTER
+}
+
+// === MODELS ===
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  role      Role     @default(ROASTER)
+  fullName  String?
+  createdAt DateTime @default(now())
+
+  batches   RoastBatch[]
+}
+
+model BeanType {
+  id             String  @id @default(uuid())
+  name           String  @unique 
+  stockGB        Int     @default(0) 
+  sackPhotoUrl   String? 
+  stockRB        Int     @default(0) 
+  
+  batches        RoastBatch[]
+}
+
+model RoastBatch {
+  id             String   @id @default(uuid())
+  batchNumber    Int      
+  createdAt      DateTime @default(now())
+  
+  // Pre-Roast
+  initialWeight  Int      
+  density        Float?   
+  targetProfile  String?  
+  
+  // Post-Roast
+  finalTime      String?  
+  finalTemp      Int?     
+  resultPhotoUrl String?  
+
+  cuppingScore    Float?   @default(0) // Nilai 1-100 (SCA Standard)
+  sensoryNotes    String?  // Catatan rasa: "Fruity, Nutty, Body tebal..."
+  isApproved      Boolean  @default(false) // Lolos QC atau Reject?
+  
+  // Inventory Logic
+  estimatedYield Int?     
+  actualYield    Int?     
+  isStockUpdated Boolean  @default(false) 
+
+  // Relations
+  roasterId      String
+  roaster        User     @relation(fields: [roasterId], references: [id])
+  beanTypeId     String
+  beanType       BeanType @relation(fields: [beanTypeId], references: [id])
+  
+  logs           RoastLog[]
+}
+
+model RoastLog {
+  id            String     @id @default(uuid())
+  timeIndex     Int        
+  temperature   Int        
+  airflow       Int        
+  isFirstCrack  Boolean    @default(false) 
+  
+  batchId       String
+  batch         RoastBatch @relation(fields: [batchId], references: [id])
+
+  @@index([batchId])
+}
