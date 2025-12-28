@@ -4,13 +4,13 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
+import { IncomingMessage, ServerResponse } from 'http';
 
-const expressApp: express.Express = express();
+const server = express();
 
-const bootstrap = async () => {
-    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
+const createNestServer = async (expressInstance: express.Express) => {
+    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressInstance));
 
-    // Config sama seperti main.ts
     app.useGlobalPipes(new ValidationPipe({
         whitelist: true,
         forbidNonWhitelisted: true,
@@ -19,8 +19,13 @@ const bootstrap = async () => {
     app.enableCors();
 
     await app.init();
+    return app;
 };
 
-bootstrap();
+// Promise to wait for initialization
+const initialized = createNestServer(server);
 
-export default expressApp;
+export default async (req: IncomingMessage, res: ServerResponse) => {
+    await initialized;
+    server(req, res);
+};
