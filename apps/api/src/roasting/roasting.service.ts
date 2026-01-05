@@ -145,6 +145,17 @@ export class RoastingService {
     });
   }
 
+  async findInProgress(roasterId: string) {
+    return this.prisma.roastBatch.findFirst({
+      where: {
+        roasterId: roasterId,
+        finalTime: null, // Masih jalan
+      },
+      orderBy: { createdAt: 'desc' }, // Ambil yang paling baru
+      include: { beanType: true } // Butuh nama bean utk UI
+    });
+  }
+
   async findOne(id: string) {
     return this.prisma.roastBatch.findUnique({
       where: { id },

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator, Image, StatusBar, Modal, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
@@ -40,6 +40,9 @@ export default function HomeScreen({ navigation, route }: any) {
   const [newPhoto, setNewPhoto] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
+  // --- ACTIVE ROAST STATE ---
+  const [activeBatch, setActiveBatch] = useState<any>(null);
+
   useFocusEffect(
     useCallback(() => {
       const checkSession = async () => {
@@ -48,24 +51,50 @@ export default function HomeScreen({ navigation, route }: any) {
           const user = JSON.parse(jsonValue);
           setRoasterId(user.id);
           setRoasterName(user.fullName?.split(' ')[0] || 'Roaster');
+          return user.id;
         }
+        return null;
       };
 
-      const fetchBeans = async () => {
+      const fetchData = async () => {
         try {
-          const res = await api.get('/beans');
-          setBeans(res.data);
+          const uId = await checkSession();
+
+          // 1. Fetch Beans
+          const resBeans = await api.get('/beans');
+          setBeans(resBeans.data);
           setLoading(false);
+
+          // 2. Check Active Roast (kalo uId ada)
+          if (uId) {
+            const resActive = await api.get(`/roasting/state/inprogress/${uId}`);
+            if (resActive.data) {
+              setActiveBatch(resActive.data);
+            } else {
+              setActiveBatch(null);
+            }
+          }
+
         } catch (error) {
           console.log(error);
           setLoading(false);
         }
       };
 
-      checkSession();
-      fetchBeans();
+      fetchData();
     }, [])
   );
+
+  const handleResume = () => {
+    if (!activeBatch) return;
+    navigation.navigate('Timer', {
+      batchId: activeBatch.id,
+      beanName: activeBatch.beanType?.name || 'Unknown Bean',
+      initialTemp: 200, // Default, nanti di Timer bisa fetch ulang kalo niat
+      initialAirflow: 0,
+      targetDrop: activeBatch.targetProfile || '-'
+    });
+  };
 
   const handleStartRoasting = async () => {
     if (!roasterId) return Alert.alert('Session Error', 'Please logout and login again.');
@@ -244,6 +273,44 @@ export default function HomeScreen({ navigation, route }: any) {
     }
   };
 
+  // --- ACTIVE ROAST TIMER LOGIC ---
+  const [timerDisplay, setTimerDisplay] = useState('00:00');
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    const startTimer = async () => {
+      if (!activeBatch) return;
+
+      // Coba ambil waktu mulai REAL dari SecureStore
+      const storedStart = await SecureStore.getItemAsync(`roast_start_${activeBatch.id}`);
+
+      if (storedStart) {
+        const startTime = parseInt(storedStart);
+
+        const updateTimer = () => {
+          const now = Date.now();
+          const diff = Math.floor((now - startTime) / 1000);
+          if (diff >= 0) {
+            const m = Math.floor(diff / 60).toString().padStart(2, '0');
+            const s = (diff % 60).toString().padStart(2, '0');
+            setTimerDisplay(`${m}:${s}`);
+          }
+        };
+        updateTimer();
+        interval = setInterval(updateTimer, 1000);
+      } else {
+        // Kalau tidak ada di SecureStore, berarti BELUM start (masih di layar Ready)
+        // Atau sudah selesai tapi API belum update (rare case)
+        setTimerDisplay('WAITING...');
+      }
+    };
+
+    startTimer();
+
+    return () => { if (interval) clearInterval(interval); };
+  }, [activeBatch]);
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
@@ -260,6 +327,27 @@ export default function HomeScreen({ navigation, route }: any) {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* 0. ACTIVE SESSION CARD (New) */}
+        {activeBatch && (
+          <View style={{ marginBottom: SPACING.xl, padding: SPACING.md, backgroundColor: COLORS.digitalRed, borderRadius: LAYOUT.borderRadius.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 4 }}>
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>ROAST IN PROGRESS</Text>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>{timerDisplay}</Text>
+              </View>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: '900' }}>Batch #{activeBatch.batchNumber}</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>{activeBatch.beanType?.name}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleResume}
+              style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }}
+            >
+              <Text style={{ color: COLORS.digitalRed, fontWeight: 'bold' }}>RESUME</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 1. BEAN SELECTOR */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>SELECT BEAN</Text>
@@ -393,13 +481,32 @@ export default function HomeScreen({ navigation, route }: any) {
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>INIT AIRFLOW</Text>
-              <TextInput
-                style={[styles.input, styles.inputHighlight]}
-                value={initialAirflow}
-                onChangeText={setInitialAirflow}
-                placeholder="0"
-                keyboardType="numeric"
-              />
+              <View style={{ flexDirection: 'row', height: 48, backgroundColor: COLORS.surfaceHighlight, borderRadius: LAYOUT.borderRadius.md, padding: 3, gap: 2 }}>
+                {['0', '25', '50', '75', '100'].map((val) => {
+                  const isActive = initialAirflow === val;
+                  return (
+                    <TouchableOpacity
+                      key={val}
+                      onPress={() => setInitialAirflow(val)}
+                      style={{
+                        flex: 1,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isActive ? '#fff' : 'transparent',
+                        borderRadius: LAYOUT.borderRadius.sm - 2,
+                        borderWidth: isActive ? 1 : 0,
+                        borderColor: COLORS.border,
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: isActive ? 0.1 : 0,
+                        shadowRadius: 1,
+                        elevation: isActive ? 1 : 0
+                      }}>
+                      <Text style={{ fontSize: 12, fontWeight: isActive ? '800' : '600', color: isActive ? COLORS.textPrimary : COLORS.textMuted }}>{val}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           </View>
         </View>

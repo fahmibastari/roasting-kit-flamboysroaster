@@ -93,7 +93,7 @@ export default function UsersPage() {
                 <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1.5">Username (for Mobile App)</label>
                 <input
                   type="text"
-                  placeholder="e.g. roaster01"
+                  placeholder="e.g. perpahmian"
                   className="w-full border border-stone-200 bg-stone-50 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all"
                   value={newUser.username}
                   onChange={e => setNewUser({ ...newUser, username: e.target.value })}
@@ -103,7 +103,7 @@ export default function UsersPage() {
                 <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1.5">Full Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Budi Santoso"
+                  placeholder="e.g. Fahmi Bastari"
                   className="w-full border border-stone-200 bg-stone-50 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all"
                   value={newUser.fullName}
                   onChange={e => setNewUser({ ...newUser, fullName: e.target.value })}

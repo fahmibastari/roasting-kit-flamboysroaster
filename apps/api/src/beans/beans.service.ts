@@ -103,7 +103,29 @@ export class BeansService {
     });
   }
 
-  remove(id: string) {
-    return this.prisma.beanType.delete({ where: { id } });
+  async remove(id: string) {
+    // Manual Cascade Delete via Transaction
+    // 1. Find all batches for this bean to get their IDs
+    const batches = await this.prisma.roastBatch.findMany({
+      where: { beanTypeId: id },
+      select: { id: true }
+    });
+
+    const batchIds = batches.map(b => b.id);
+
+    return this.prisma.$transaction([
+      // 2. Delete all logs associated with these batches
+      this.prisma.roastLog.deleteMany({
+        where: { batchId: { in: batchIds } }
+      }),
+      // 3. Delete the batches themselves
+      this.prisma.roastBatch.deleteMany({
+        where: { beanTypeId: id }
+      }),
+      // 4. Finally, delete the bean type
+      this.prisma.beanType.delete({
+        where: { id }
+      })
+    ]);
   }
 }

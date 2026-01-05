@@ -7,6 +7,7 @@ import Slider from '@react-native-community/slider';
 import api from '../services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as SecureStore from 'expo-secure-store';
 import { COLORS, TYPOGRAPHY, SPACING, SHADOWS, LAYOUT } from '../constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -33,6 +34,57 @@ export default function RoastingTimerScreen({ route, navigation }: any) {
   };
 
   useEffect(() => {
+    // RESUME LOGIC: Fetch existing logs AND Batch Info
+    const fetchExistingState = async () => {
+      try {
+        const res = await api.get(`/roasting/${batchId}`);
+        const batchData = res.data;
+        const existingLogs = batchData?.logs || [];
+
+        // CRITICAL CHECK: Only auto-start if there are actual logs!
+        // This prevents new batches from auto-jumping.
+        if (existingLogs.length > 0) {
+
+          // 1. Try to get Local Start Time (Precision Sync)
+          const storedStart = await SecureStore.getItemAsync(`roast_start_${batchId}`);
+
+          if (storedStart) {
+            const startTime = parseInt(storedStart);
+            const now = Date.now();
+            const realElapsed = Math.floor((now - startTime) / 1000);
+            setSeconds(realElapsed);
+          } else {
+            // Fallback: Use last log time (better than 0, but might have gap)
+            // We could potentially set storedStart here if we wanted to "healing" the session
+            const maxTime = Math.max(...existingLogs.map((l: any) => l.timeIndex));
+            setSeconds(maxTime + 1);
+          }
+
+          // 2. Restore Controls State
+          const sortedLogs = [...existingLogs].sort((a: any, b: any) => b.timeIndex - a.timeIndex);
+          setLogs(sortedLogs);
+
+          const lastLog = sortedLogs[0];
+          setTemp(lastLog.temperature);
+          setAirflow(lastLog.airflow);
+
+          const fcLog = existingLogs.find((l: any) => l.isFirstCrack);
+          if (fcLog) setFirstCrackTime(formatTime(fcLog.timeIndex));
+
+          // 3. Auto Start
+          setHasStarted(true);
+          setIsActive(true);
+        }
+
+      } catch (error) {
+        console.log("Resume Error:", error);
+      }
+    };
+
+    fetchExistingState();
+  }, [batchId]);
+
+  useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isActive) {
       interval = setInterval(() => {
@@ -49,9 +101,15 @@ export default function RoastingTimerScreen({ route, navigation }: any) {
     }
   }, [seconds, isActive, isOverTime]);
 
-  const handleStart = () => {
+
+
+  const handleStart = async () => {
     setHasStarted(true);
     setIsActive(true);
+
+    // Save Start Time Locally for Wall-Clock Sync
+    await SecureStore.setItemAsync(`roast_start_${batchId}`, Date.now().toString());
+
     handleLog(false);
   };
 
@@ -76,9 +134,10 @@ export default function RoastingTimerScreen({ route, navigation }: any) {
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     setIsActive(false);
     setIsFinished(true);
+    await SecureStore.deleteItemAsync(`roast_start_${batchId}`);
   };
 
   const openCamera = async () => {
@@ -112,7 +171,7 @@ export default function RoastingTimerScreen({ route, navigation }: any) {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      Alert.alert("Success! 🎉", "Stock Updated. Roasting Completed.", [
+      Alert.alert("Success!", "Stock Updated. Roasting Completed.", [
         { text: "Back to Home", onPress: () => navigation.popToTop() }
       ]);
     } catch (error: any) {

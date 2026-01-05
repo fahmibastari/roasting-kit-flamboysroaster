@@ -7,14 +7,19 @@ import { CreateLogDto } from './dto/create-log.dto';
 
 @Controller('roasting')
 export class RoastingController {
-  constructor(private readonly roastingService: RoastingService) {}
+  constructor(private readonly roastingService: RoastingService) { }
 
   // --- TAMBAHKAN BAGIAN INI (YANG HILANG) ---
-  @Get() 
+  @Get()
   findAll() {
     return this.roastingService.findAll();
   }
   // -------------------------------------------
+
+  @Get('state/inprogress/:roasterId')
+  findInProgress(@Param('roasterId') roasterId: string) {
+    return this.roastingService.findInProgress(roasterId);
+  }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -36,13 +41,24 @@ export class RoastingController {
   @UseInterceptors(FileInterceptor('photo'))
   async finish(
     @Param('id') id: string,
-    @Body('finalTime') finalTime: string,
-    @Body('finalTemp') finalTemp: string,
+    @Body() body: any,
     @UploadedFile() photo: Express.Multer.File,
   ) {
+    // Manual extraction to ensure multipart fields are caught
+    const finalTime = body.finalTime;
+    const finalTemp = body.finalTemp;
+
+    console.log("Controller Finish:", { id, finalTime, finalTemp, hasPhoto: !!photo });
+
+    if (!finalTime || !finalTemp) {
+      // Fallback or Error? throw error to alert mobile app
+      // But wait, mobile app might have sent it. 
+      // If undefined here, it means parsing failed.
+    }
+
     return this.roastingService.finishRoasting(
-      id, 
-      finalTime, 
+      id,
+      finalTime,
       parseInt(finalTemp),
       photo
     );
